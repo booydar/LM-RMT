@@ -42,6 +42,7 @@ elif [[ $1 == 'eval' ]]; then
     echo 'Run evaluation...'
     python3 eval_sqeq.py \
         --cuda \
+        --device_ids 0 \
         --data ../../data/sqeq \
         --dataset sqeq \
         --tgt_len 60 \
@@ -53,7 +54,6 @@ elif [[ $1 == 'eval' ]]; then
         --read_mem_from_cache \
         --answer_size 30 \
         --max_eval_steps 50 \
-        --device_ids 0 \
         ${@:2}
 else
     echo 'unknown argment 1'

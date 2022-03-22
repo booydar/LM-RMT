@@ -3,9 +3,9 @@
 if [[ $1 == 'train' ]]; then
     echo 'Run training...'
     python3 train_synthetic.py \
-        --data ~/bulatov/TXL/data24/data24 \
-        --dataset reverse \
-        --n_layer 4 \
+        --data ../../data/reverse120 \
+        --dataset reverse120 \
+        --n_layer 6 \
         --d_model 128 \
         --n_head 4 \
         --d_head 64 \
@@ -13,16 +13,18 @@ if [[ $1 == 'train' ]]; then
         --dropout 0.1 \
         --dropatt 0.0 \
         --optim adam \
-        --lr 0.00025 \
+        --lr 0.0001 \
         --lr_min 0.000001 \
-        --decay_rate 0.5 \
         --scheduler 'dev_perf' \
-        --patience 10 \
+        --decay_rate 0.5 \
+        --patience 8 \
         --warmup_step 0 \
-        --max_step 300000 \
-        --tgt_len 48 \
+        --max_step 250000 \
+        --log_interval 4000 \
+        --eval_interval 12000 \
+        --tgt_len 240 \
         --mem_len 0 \
-        --eval_tgt_len 48 \
+        --eval_tgt_len 240 \
         --batch_size 32 \
         --num_mem_tokens 0 \
         --mem_backprop_depth 0 \
@@ -30,7 +32,7 @@ if [[ $1 == 'train' ]]; then
         --max_eval_steps 50 \
         --read_mem_from_cache \
         --attn_type 0 \
-        --answer_size 24\
+        --answer_size 120\
         --cuda\
         --multi_gpu\
         --device_ids 0 1\

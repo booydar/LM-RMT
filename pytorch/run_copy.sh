@@ -3,7 +3,7 @@
 if [[ $1 == 'train' ]]; then
     echo 'Run training...'
     python3 train_synthetic.py \
-        --data ~/x-transformers/data24 \
+        --data ~/bulatov/TXL/data24/data24 \
         --dataset copy \
         --n_layer 4 \
         --d_model 128 \
@@ -17,11 +17,11 @@ if [[ $1 == 'train' ]]; then
         --lr_min 0.000001 \
         --scheduler 'dev_perf' \
         --decay_rate 0.5 \
-        --log_interval 4000 \
+        --patience 6 \
+        --log_interval 1000 \
         --eval_interval 12000 \
-        --patience 8 \
         --warmup_step 0 \
-        --max_step 250000 \
+        --max_step 400000 \
         --tgt_len 72 \
         --mem_len 0 \
         --eval_tgt_len 72 \

@@ -22,9 +22,9 @@ if [[ $1 == 'train' ]]; then
         --patience 10 \
         --warmup_step 0 \
         --max_step 600000 \
-        --tgt_len 891 \
+        --tgt_len 892 \
         --mem_len 0 \
-        --eval_tgt_len 891 \
+        --eval_tgt_len 892 \
         --batch_size 32 \
         --num_mem_tokens 0 \
         --mem_backprop_depth 0 \
@@ -44,7 +44,7 @@ elif [[ $1 == 'eval' ]]; then
         --cuda \
         --data ../../data/linsys \
         --dataset linsys \
-        --tgt_len 891 \
+        --tgt_len 892 \
         --mem_len 0 \
         --clamp_len 0 \
         --split all \
