@@ -33,12 +33,15 @@ def generate_data(generator, task_name, path='data', train_size=10_000, val_size
 
 
 class data_loader:
-    def __init__(self, mode, task_name, path='data', batch_size=32, tgt_len=24, device='cpu'):
+    def __init__(self, mode, task_name, path='data', batch_size=32, tgt_len=24, device='cpu', stack=True):
         X = np.load(f'{path}/{task_name}_{mode}_X.npy')
         y = np.load(f'{path}/{task_name}_{mode}_y.npy')
 
-        src = np.hstack((X, y))
-        src, tgt = src[:, :-1], src[:, 1:]
+        if stack:
+            src = np.hstack((X, y))
+            src, tgt = src[:, :-1], src[:, 1:]
+        else:
+            src, tgt = X, y
 
         self.src = torch.Tensor(src).long()
         self.tgt = torch.Tensor(tgt).long()
