@@ -22,6 +22,7 @@ def logs_to_tb(path, log_dir='logs_tb'):
     for name in names:
         filepath = os.path.join(path, name)
         print('Processing ', filepath)
+        name = '_'.join(filepath.split('/')[-3:])
         log_path = os.path.join(log_dir, name)
         writer = SummaryWriter(log_dir=log_path)
 
@@ -36,7 +37,7 @@ def logs_to_tb(path, log_dir='logs_tb'):
         rows = np.array(log.split('\n'))
         log_start_ind = np.where(rows == rows[0])[0][1] + 3
         rows = rows[log_start_ind:]
-        eval_rows = [r for r in rows if 'Eval' in r]
+        eval_rows = [r for r in rows if 'Eval ' in r]
         eval_values = list(map(get_eval_values, eval_rows))
 
         for step, loss, metric in eval_values:
@@ -46,6 +47,10 @@ def logs_to_tb(path, log_dir='logs_tb'):
       # train metrics 
         df = pd.read_csv(filepath, error_bad_lines=False, skiprows=70, sep='|', names = ['1', 'ep_step', 'batches', 'lr', 'ms_batch', 'loss', 'metric'])
         df = df[df.columns[1:]].dropna()
+        if df.shape[0] == 0:
+            continue
+        # print(df)
+        df = df[df.ep_step.apply(lambda x: 'epoch' in x and 'step' in x)]
         df['epoch'] = df.ep_step.apply(lambda x: int(x.split('step')[0].split('epoch')[1].strip()))
         df['step'] = df.ep_step.apply(lambda x: int(x.split('step')[1].strip()))
         df = df.drop(['ep_step'], axis=1)
@@ -63,7 +68,7 @@ def logs_to_tb(path, log_dir='logs_tb'):
 
 
 ## Sample usage:
-# python logs_to_tb --path initial_logs --log_dir --tensorboard_logs
+# python logs_to_tb.py --path initial_logs --log_dir --tensorboard_logs
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--path', type=str, default='logs',
