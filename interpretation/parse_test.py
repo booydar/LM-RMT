@@ -67,6 +67,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--path', type=str, default='logs',
                         help='Location of logs')
+    parser.add_argument('--df_path', type=str, default='logs',
+                        help='Destination path')
 
     args = parser.parse_args()    
-    parse_test(path=args.path)
+    parse_test(path=args.path, df_path=args.df_path)
