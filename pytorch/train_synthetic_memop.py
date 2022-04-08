@@ -13,17 +13,17 @@ import torch.optim as optim
 
 # from data_utils import get_lm_corpus
 from experiment_utils.generate_data import data_loader
-from mem_transformer import MemTransformerLM
+from mem_transformer_memop import MemTransformerLM
 from utils.exp_utils import create_exp_dir
 from utils.data_parallel import BalancedDataParallel
 
-# datasets = ['reverse', 'copy', 'retrieval', 'retrieval59', 'retrieval59_ext', 'retrieval29_ext', 'copy120', 'reverse120', 'copy1k']
+datasets = ['reverse', 'copy', 'reverse120', 'copy120']
 
 parser = argparse.ArgumentParser(description='PyTorch Transformer Language Model')
 parser.add_argument('--data', type=str, default='../data/wikitext-103',
                     help='location of the data corpus')
 parser.add_argument('--dataset', type=str, default='reverse',
-                    # choices=datasets,
+                    choices=datasets,
                     help='dataset name')
 parser.add_argument('--n_layer', type=int, default=12,
                     help='number of total layers')
@@ -130,8 +130,6 @@ parser.add_argument('--gpu0_bsz', type=int, default=-1,
                     help='batch size on gpu 0')
 parser.add_argument('--max_eval_steps', type=int, default=-1,
                     help='max eval steps')
-parser.add_argument('--max_test_steps', type=int, default=-1,
-                    help='max test steps')    
 parser.add_argument('--sample_softmax', type=int, default=-1,
                     help='number of samples in sampled softmax')
 parser.add_argument('--patience', type=int, default=0,
@@ -163,6 +161,12 @@ parser.add_argument('--eval_interval', type=int, default=8000,
                     help='Evaluation period in batches')
 parser.add_argument('--answer_size', type=int, default=24,
                     help='How many last tokens in segment to use for loss.')
+parser.add_argument('--memory_loss_choice', type=str, default='r',
+                    choices=['r', 'w', 'rw'],
+                    help='What memory to use for supplementary loss')
+parser.add_argument('--memory_loss_coef', type=float, default=1,
+                    help='Coefficient for supplementary loss')
+
 
 args = parser.parse_args()
 args.tied = not args.not_tied
@@ -430,9 +434,14 @@ def evaluate(eval_iter):
     # Evaluation
     total_len, total_loss = 0, 0.
     num_correct, num_correct_tf, num_total = 0, 0, 0
+    operations = None
     with torch.no_grad():
         mems = tuple()  
         for i, (data_, target_, seq_len) in enumerate(eval_iter):
+            if operations is None:
+                operations = torch.zeros_like(target_)
+                operations[-args.answer_size:] = 1
+                
             if data_.shape[1] < args.batch_size:
                 print('maslina')
                 continue
@@ -442,27 +451,36 @@ def evaluate(eval_iter):
             if model.mem_tokens is not None:
                 mem_tokens = model.mem_tokens.repeat(1, data_.shape[1], 1)
 
-            data_segs = torch.chunk(data_, data_.shape[0] // args.tgt_len)
-            target_segs = torch.chunk(target_, target_.shape[0] // args.tgt_len)
-#             print('data segs, ', [s.shape for s in data_segs])
+            n_chunks_ = data_.shape[0] // args.tgt_len
+            data_segs = torch.chunk(data_, n_chunks_)
+            target_segs = torch.chunk(target_, n_chunks_)
+            oper_segs = torch.chunk(operations, n_chunks_)
             losses = []
+            oper_losses = []
         
         # caclulate loss
-            for data, target in zip(data_segs, target_segs):
+            for data, target, oper in zip(data_segs, target_segs, oper_segs):
+                oper = oper[:1].repeat(model.num_mem_tokens, 1)
                 if mems is None:
                     mems = tuple()
-#                 print('Mems: ', [m.shape for m in mems])
-#                 print('data, target', data.shape, target.shape)
-                ret = para_model(data, target, *mems, mem_tokens=mem_tokens)
+                ret = para_model(data, target, *mems, mem_tokens=mem_tokens, operations=oper, memory_loss_choice=args.memory_loss_choice, memory_loss_coef=args.memory_loss_coef)
                 if model.num_mem_tokens == 0:
-                    loss, mems = ret[0], ret[1:]
+                    loss, oper_loss, mems = ret[0], ret[1], ret[2:]
                 else:
-                    mem_tokens, loss, mems = ret[0], ret[1], ret[2:]
+                    mem_tokens, loss, oper_loss, mems = ret[0], ret[1], ret[2], ret[3:]
                 losses.append(loss)
+                losses.append(loss)
+                oper_losses.append(oper_loss)
 
             loss = torch.cat(losses)
             loss = loss[-args.answer_size:]
             loss = loss.mean()
+
+            # add operation loss
+            oper_loss = torch.cat(oper_losses)
+            oper_loss = oper_loss.float().mean().type_as(oper_loss)
+            loss += oper_loss
+
             total_loss += args.answer_size * loss.float().item()
             total_len += args.answer_size
 
@@ -473,7 +491,7 @@ def evaluate(eval_iter):
 
             pred_segs = []
             mems = tuple()    
-            for data, target in zip(data_segs, target_segs):
+            for data, target, oper in zip(data_segs, target_segs, oper_segs):
                 if mems is None:
                     mems = tuple()
                 if not mems: mems = model.init_mems(data.device)
@@ -511,7 +529,6 @@ def evaluate(eval_iter):
             if model.mem_tokens is not None:
                 mem_tokens = model.mem_tokens.repeat(1, data_.shape[1], 1)
             
-#             if args.answer_size >= args.tgt_len:
             q_data, q_target = data_[:-args.answer_size].clone(), target_[:-args.answer_size].clone()
             a_data, a_target = data_[-args.answer_size:].clone(), target_[-args.answer_size:].clone()
 
@@ -522,8 +539,6 @@ def evaluate(eval_iter):
             a_data_segs = torch.chunk(a_data, a_chunks)
             a_target_segs = torch.chunk(a_target, a_chunks)
             
-            # data_src = data_.clone()
-            # target_src = target_.clone()
             mems, tmp_mems = tuple(), tuple()
             for data, target in zip(q_data_segs, q_target_segs):
                 if mems is None:
@@ -611,13 +626,13 @@ def train():
         mems = tuple()
     train_iter = tr_iter.get_varlen_iter() if args.varlen else tr_iter
     mem_tokens = None
+    operations = None
     prev_data, prev_target, prev_mems, prev_mem_tokens = [], [], [], []
     for batch, (data_, target_, seq_len) in enumerate(train_iter):
+        if operations is None:
+            operations = torch.zeros_like(target_)
+            operations[-args.answer_size:] = 1
         model.zero_grad()
-        # if mem_tokens is not None:
-        #     mem_tokens = mem_tokens.detach()
-        # elif model.mem_tokens is not None:
-        #     mem_tokens = model.mem_tokens.repeat(1, data_.shape[1], 1)
          
         if args.batch_chunk > 1:
             raise(NotImplementedError)
@@ -638,42 +653,51 @@ def train():
             #         loss.backward()
             #     train_loss += loss.float().item()
         else:
-            data_segs = torch.chunk(data_, data_.shape[0] // args.tgt_len)
-            target_segs = torch.chunk(target_, target_.shape[0] // args.tgt_len)
+            n_chunks_ = data_.shape[0] // args.tgt_len
+            data_segs = torch.chunk(data_, n_chunks_)
+            target_segs = torch.chunk(target_, n_chunks_)
+            oper_segs = torch.chunk(operations, n_chunks_)
 #             print('data, target ', data_[:, 0], target_[:, 0])
             losses = []
+            oper_losses = []
             if model.mem_tokens is not None:
                 mem_tokens = model.mem_tokens.repeat(1, data_.shape[1], 1)
             
             prev_data, prev_target, prev_mems, prev_mem_tokens = [], [], [], []
-            for data, target in zip(data_segs, target_segs):
+            for data, target, oper in zip(data_segs, target_segs, oper_segs):
+                oper = oper[:1].repeat(model.num_mem_tokens, 1)
                 if args.mem_backprop_depth > 0:
-#                     raise(NotImplementedError)
                     prev_data = prev_data[-args.mem_backprop_depth:] + [data]
                     prev_target = prev_target[-args.mem_backprop_depth:] + [target]
                     prev_mems = prev_mems[-args.mem_backprop_depth:] + [mems]
                     prev_mem_tokens = prev_mem_tokens[-args.mem_backprop_depth:] + [mem_tokens.detach()]
-#                     mem_tokens.values = prev_mem_tokens[0].clone()
                     mem_tokens = prev_mem_tokens[0]
                     for pd, pt, pm in zip(prev_data[:-1], prev_target[:-1], prev_mems[:-1]):
-                        ret = para_model(pd, pt, *pm, mem_tokens=mem_tokens)
+                        ret = para_model(data, target, *mems, mem_tokens=mem_tokens, operations=oper, memory_loss_choice=args.memory_loss_choice, memory_loss_coef=args.memory_loss_coef)
                         if model.num_mem_tokens == 0:
-                            loss, mems = ret[0], ret[1:]
+                            loss, oper_loss, mems = ret[0], ret[1], ret[2:]
                         else:
-                            mem_tokens, loss, mems = ret[0], ret[1], ret[2:]
+                            mem_tokens, loss, oper_loss, mems = ret[0], ret[1], ret[2], ret[3:]
                         if args.bptt_bp:
                             raise(NotImplementedError)
                 
-                ret = para_model(data, target, *mems, mem_tokens=mem_tokens)
+                ret = para_model(data, target, *mems, mem_tokens=mem_tokens, operations=oper, memory_loss_choice=args.memory_loss_choice, memory_loss_coef=args.memory_loss_coef)
                 if model.num_mem_tokens == 0:
-                    loss, mems = ret[0], ret[1:]
+                    loss, oper_loss, mems = ret[0], ret[1], ret[2:]
                 else:
-                    mem_tokens, loss, mems = ret[0], ret[1], ret[2:]
+                    mem_tokens, loss, oper_loss, mems = ret[0], ret[1], ret[2], ret[3:]
                 losses.append(loss)
+                oper_losses.append(oper_loss)
 
             loss = torch.cat(losses)
             loss = loss[-args.answer_size:]
             loss = loss.float().mean().type_as(loss)
+
+            # add operation loss
+            oper_loss = torch.cat(oper_losses)
+            oper_loss = oper_loss.float().mean().type_as(oper_loss)
+            loss += oper_loss
+
             if args.fp16:
                 optimizer.backward(loss)
             else:
@@ -782,7 +806,6 @@ with open(os.path.join(args.work_dir, 'model.pt'), 'rb') as f:
 para_model = model.to(device)
 
 # Run on test data.
-args.max_eval_steps = args.max_test_steps
 test_loss, test_acc = evaluate(te_iter)
 logging('=' * 100)
 if args.dataset in ['enwik8', 'text8']:

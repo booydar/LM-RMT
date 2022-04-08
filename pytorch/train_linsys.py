@@ -130,6 +130,8 @@ parser.add_argument('--gpu0_bsz', type=int, default=-1,
                     help='batch size on gpu 0')
 parser.add_argument('--max_eval_steps', type=int, default=-1,
                     help='max eval steps')
+parser.add_argument('--max_test_steps', type=int, default=-1,
+                    help='max test steps')                    
 parser.add_argument('--sample_softmax', type=int, default=-1,
                     help='number of samples in sampled softmax')
 parser.add_argument('--patience', type=int, default=0,
@@ -212,7 +214,7 @@ if args.cuda:
 # Load data
 ###############################################################################
 # if args.dataset in {'reverse', 'copy', 'retrieval', 'retrieval59', 'retrieval59_ext', 'retrieval29_ext'}:
-stack = True
+stack = False
 tr_iter = data_loader('train', path=args.data, task_name=args.dataset, batch_size=args.batch_size,
                                     tgt_len=args.tgt_len, device=device, stack=stack)
 va_iter = data_loader('val', path=args.data, task_name=args.dataset, batch_size=args.batch_size,
@@ -220,6 +222,8 @@ va_iter = data_loader('val', path=args.data, task_name=args.dataset, batch_size=
 te_iter = data_loader('test', path=args.data, task_name=args.dataset, batch_size=args.batch_size,
                                     tgt_len=args.tgt_len, device=device, stack=stack)
 ntokens = args.ntokens = (tr_iter.src.max() + 1).item()
+
+print(f'Stack is {stack}, src shape: {next(next(te_iter))[0].shape}')
 
 # # adaptive softmax / embedding
 cutoffs, tie_projs = [], [False]
@@ -443,8 +447,8 @@ def evaluate(eval_iter):
             if model.mem_tokens is not None:
                 mem_tokens = model.mem_tokens.repeat(1, data_.shape[1], 1)
 
-            data_segs = torch.chunk(data_, data_.shape[0] // args.tgt_len)
-            target_segs = torch.chunk(target_, target_.shape[0] // args.tgt_len)
+            data_segs = torch.chunk(data_.clone(), data_.shape[0] // args.tgt_len)
+            target_segs = torch.chunk(target_.clone(), target_.shape[0] // args.tgt_len)
             losses = []
         
         # caclulate loss
@@ -507,52 +511,53 @@ def evaluate(eval_iter):
             if model.mem_tokens is not None:
                 mem_tokens = model.mem_tokens.repeat(1, data_.shape[1], 1)
             
-            if args.answer_size >= args.tgt_len:
-                q_data, q_target = data_[:-args.answer_size].clone(), target_[:-args.answer_size].clone()
-                a_data, a_target = data_[-args.answer_size:].clone(), target_[-args.answer_size:].clone()
+            # if args.answer_size >= args.tgt_len:
+            #     q_data, q_target = data_[:-args.answer_size].clone(), target_[:-args.answer_size].clone()
+            #     a_data, a_target = data_[-args.answer_size:].clone(), target_[-args.answer_size:].clone()
 
-                q_chunks = q_data.shape[0] // args.tgt_len
-                a_chunks = max((a_data.shape[0] // args.tgt_len, 1))
-                q_data_segs = torch.chunk(q_data, q_chunks)
-                q_target_segs = torch.chunk(q_target, q_chunks)
-                a_data_segs = torch.chunk(a_data, a_chunks)
-                a_target_segs = torch.chunk(a_target, a_chunks)
+            #     q_chunks = max((q_data.shape[0] // args.tgt_len, 1))
+            #     a_chunks = max((a_data.shape[0] // args.tgt_len, 1))
+            #     q_data_segs = torch.chunk(q_data, q_chunks)
+            #     q_target_segs = torch.chunk(q_target, q_chunks)
+            #     a_data_segs = torch.chunk(a_data, a_chunks)
+            #     a_target_segs = torch.chunk(a_target, a_chunks)
                 
-                # data_src = data_.clone()
-                # target_src = target_.clone()
-                mems, tmp_mems = tuple(), tuple()
-                for data, target in zip(q_data_segs, q_target_segs):
-                    if mems is None:
-                        mems = tuple()
-                    if not mems: mems = model.init_mems(data.device)
+            #     # data_src = data_.clone()
+            #     # target_src = target_.clone()
+            #     mems, tmp_mems = tuple(), tuple()
+            #     for data, target in zip(q_data_segs, q_target_segs):
+            #         if mems is None:
+            #             mems = tuple()
+            #         if not mems: mems = model.init_mems(data.device)
 
-                    tgt_len = target.size(0)
-                    hidden, mems = model._forward(data, mems=mems, mem_tokens=mem_tokens)
-                    num_mem = model.num_mem_tokens
-                    if model.num_mem_tokens > 0:
-                        if model.mem_at_end:
-                            pred_hid = hidden[-tgt_len - num_mem:-num_mem]
-                            # mem_tokens_read = hidden[-tgt_len - 2*num_mem:-tgt_len - num_mem]
-                            mem_tokens = hidden[-num_mem:]
-                        else:
-                            pred_hid = hidden[-tgt_len:]
-                            mem_tokens = hidden[-tgt_len-num_mem:-tgt_len]
+            #         tgt_len = target.size(0)
+            #         hidden, mems = model._forward(data, mems=mems, mem_tokens=mem_tokens)
+            #         num_mem = model.num_mem_tokens
+            #         if model.num_mem_tokens > 0:
+            #             if model.mem_at_end:
+            #                 pred_hid = hidden[-tgt_len - num_mem:-num_mem]
+            #                 # mem_tokens_read = hidden[-tgt_len - 2*num_mem:-tgt_len - num_mem]
+            #                 mem_tokens = hidden[-num_mem:]
+            #             else:
+            #                 pred_hid = hidden[-tgt_len:]
+            #                 mem_tokens = hidden[-tgt_len-num_mem:-tgt_len]
                 
-                target_preds = list(q_target_segs)
-                start_ind = 0
-            elif data_.shape[0] != args.tgt_len:
-                print(f'Tgt len {args.tgt_len} but data shape {data_.shape}!')
-                raise(NotImplementedError)
-            else:
-                a_data, a_target = data_.clone(), target_.clone()
-                a_chunks = 1
-                a_data_segs = torch.chunk(a_data, a_chunks)
-                a_target_segs = torch.chunk(a_target, a_chunks)
-                target_preds = list()
-                start_ind = 30
-            
-            for data, target in zip(a_data_segs, a_target_segs):
-                for token_ind in range(start_ind, args.tgt_len):
+            #     target_preds = list(q_target_segs)
+            #     start_ind = 0
+            # elif data_.shape[0] != args.tgt_len:
+            #     print(f'Tgt len {args.tgt_len} but data shape {data_.shape}!')
+            #     raise(NotImplementedError)
+            # else:
+            #     a_data, a_target = data_.clone(), target_.clone()
+            #     a_chunks = 1
+            #     a_data_segs = torch.chunk(a_data, a_chunks)
+            #     a_target_segs = torch.chunk(a_target, a_chunks)
+            #     target_preds = list()
+            #     start_ind = 30
+            start_gen_ind = target_.shape[0] - args.answer_size
+            target_preds = []
+            for seg_num, (data, target) in enumerate(zip(data_segs, target_segs)):
+                for token_ind in range(args.tgt_len):
                     if mems is None:
                         mems = tuple()
                     if not mems: mems = model.init_mems(data.device)
@@ -577,6 +582,9 @@ def evaluate(eval_iter):
                     logit = torch.nn.functional.softmax(logit[token_ind], dim=-1)
                     preds = logit.argmax(dim=1)
                     
+                    if seg_num * tgt_len + token_ind < start_gen_ind:
+                        continue
+
                     target[token_ind] = preds
                     if token_ind < args.tgt_len - 1:
                         data[token_ind + 1] = preds
@@ -599,11 +607,11 @@ def evaluate(eval_iter):
             num_total_answers += args.batch_size
 
     logging(f'|\nSource: {S}\nTarget: {T}\nTeacher forcing: acc:{num_correct_tf/num_total}\nPreds:  {P[:, -1]}\n')
-    # if args.answer_size >= args.tgt_len:
     logging(f'No teacher forcing: acc:{num_correct/num_total}\nPreds:  {target_preds[:, -1].cpu().numpy()}\n')
     accuracy = num_correct / num_total
-    # else:
-    #     accuracy = num_correct_tf / num_total
+    
+    print(f'num_correct_tf, num_correct NO tf, num_total {num_correct_tf}, {num_correct}, {num_total}')
+    print(f'num_correct_answers/num_total_answers {num_correct_answers}, {num_total_answers}')
     
     logging(f'Answer acc:{num_correct_answers/num_total_answers}\n\n')
         
@@ -795,6 +803,7 @@ with open(os.path.join(args.work_dir, 'model.pt'), 'rb') as f:
 para_model = model.to(device)
 
 # Run on test data.
+args.max_eval_steps = args.max_test_steps
 test_loss, test_acc = evaluate(te_iter)
 logging('=' * 100)
 if args.dataset in ['enwik8', 'text8']:
