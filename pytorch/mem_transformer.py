@@ -698,7 +698,7 @@ class MemTransformerLM(nn.Module):
                     dec_attn_mask[-self.num_mem_tokens:, -self.num_mem_tokens:] = 0
                     dec_attn_mask[-self.num_mem_tokens:, :mlen] = 1 - int(self.read_mem_from_cache)
             dec_attn_mask = dec_attn_mask[:,:,None]
-            
+        
         hids = []
         if self.attn_type == 0: # default
             pos_seq = torch.arange(klen-1, -1, -1.0, device=word_emb.device, 

@@ -613,6 +613,9 @@ def train():
     mem_tokens = None
     prev_data, prev_target, prev_mems, prev_mem_tokens = [], [], [], []
     for batch, (data_, target_, seq_len) in enumerate(train_iter):
+        if data_.shape[1] < args.batch_size:
+            print('maslina')
+            continue
         model.zero_grad()
         # if mem_tokens is not None:
         #     mem_tokens = mem_tokens.detach()
