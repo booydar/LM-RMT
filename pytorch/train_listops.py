@@ -1,6 +1,5 @@
 import argparse
 from genericpath import exists
-from signal import raise_signal
 import time
 import math
 import os, sys
@@ -218,7 +217,7 @@ va_iter = listops6k_loader('val', path=args.data, task_name=args.dataset, batch_
                                     tgt_len=args.tgt_len, device=device)
 te_iter = listops6k_loader('test', path=args.data, task_name=args.dataset, batch_size=args.batch_size,
                                     tgt_len=args.tgt_len, device=device)
-ntokens = args.ntokens = (tr_iter.src.max() + 1).item()
+ntokens = args.ntokens = (tr_iter.src[0].max() + 1).item()
 
 # # adaptive softmax / embedding
 cutoffs, tie_projs = [], [False]
@@ -495,7 +494,7 @@ def evaluate(eval_iter):
             preds = logit.argmax(dim=-1)
 
             if 1 in target_:
-                num_total += 1
+                num_total += args.batch_size
                 num_correct_tf += (preds[-1] == target_[-1]).float().sum().item()
             
             S, T, P = data_[:, -1].cpu().numpy(), target_[:, -1].cpu().numpy(), preds.cpu().numpy()
@@ -558,11 +557,11 @@ def train():
                     if args.bptt_bp:
                         raise(NotImplementedError)
                 
-                ret = para_model(data_, target_, *mems, mem_tokens=mem_tokens)
-                if model.num_mem_tokens == 0:
-                    loss, mems = ret[0], ret[1:]
-                else:
-                    mem_tokens, loss, mems = ret[0], ret[1], ret[2:]
+            ret = para_model(data_, target_, *mems, mem_tokens=mem_tokens)
+            if model.num_mem_tokens == 0:
+                loss, mems = ret[0], ret[1:]
+            else:
+                mem_tokens, loss, mems = ret[0], ret[1], ret[2:]
 
             # loss = loss[-args.answer_size:]
             loss = loss.float().mean().type_as(loss)

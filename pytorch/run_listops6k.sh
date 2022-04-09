@@ -2,7 +2,7 @@
 
 if [[ $1 == 'train' ]]; then
     echo 'Run training...'
-    python3 train_listops6k.py \
+    python3 train_listops.py \
         --data ../../data/listops6k \
         --dataset listops6k \
         --n_layer 4 \
