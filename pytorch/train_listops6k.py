@@ -494,8 +494,6 @@ def evaluate(eval_iter):
             logit = torch.nn.functional.softmax(logit, dim=-1)
             preds = logit.argmax(dim=-1)
 
-            num_total += args.batch_size * args.answer_size
-
             if 1 in target_:
                 num_total += 1
                 num_correct_tf += (preds[-1] == target_[-1]).float().sum().item()
