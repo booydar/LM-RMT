@@ -64,6 +64,42 @@ class data_loader:
             self.data_ptr = (self.data_ptr + self.batch_size) % self.data_size
 
             yield src.T, tgt.T, self.tgt_len
+
+
+class listops6k_loader:
+    def __init__(self, mode, task_name, path='data', batch_size=128, tgt_len=500, device='cpu'):
+        X = np.load(f'{path}/{task_name}_{mode}_X.npy')
+        y = np.load(f'{path}/{task_name}_{mode}_y.npy')
+
+        src = np.hstack((X, y))
+        src, tgt = src[:, :-1], src[:, 1:]
+
+        src = torch.Tensor(src).long()
+        tgt = torch.Tensor(tgt).long()
+
+        n_chunks = src.shape[1] // tgt_len
+        self.src = torch.chunk(src, n_chunks, dim=1)
+        self.tgt = torch.chunk(tgt, n_chunks, dim=1)
+
+        self.data_size = src.shape[0]
+        self.data_ptr = 0
+
+        self.batch_size = batch_size
+        self.tgt_len = tgt_len
+        self.device = device
+
+    def __iter__(self):
+        return next(self)
+
+    def __next__(self):
+        while(True):
+            for src, tgt in zip(self.src, self.tgt):
+                src = src[self.data_ptr: self.data_ptr+self.batch_size].to(self.device)
+                tgt = tgt[self.data_ptr: self.data_ptr+self.batch_size].to(self.device)
+                
+                yield src.T, tgt.T, self.tgt_len
+            
+            self.data_ptr = (self.data_ptr + self.batch_size) % self.data_size
         
     
 class copy_generator:
