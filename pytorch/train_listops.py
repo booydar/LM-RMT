@@ -430,7 +430,7 @@ def evaluate(eval_iter):
     num_correct_tf, num_total = 0, 0
     with torch.no_grad():
         mems = tuple()  
-        for i, (data_, target_, seq_len) in enumerate(eval_iter):
+        for i, (data_, target_, flag) in enumerate(eval_iter):
             if data_.shape[1] < args.batch_size:
                 print('maslina')
                 continue
