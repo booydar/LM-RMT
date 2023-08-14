@@ -1,10 +1,12 @@
 # Recurrent Memory Transformer
 
 >This code implements the RMT architecture from
+
 >https://arxiv.org/abs/2207.06881
 >Aydar Bulatov, Yuri Kuratov, Mikhail S. Burtsev
 
 > **Note!**: For newer plug-and-play RMT version that works with pretrained HF models please refer to:
+
 >[paper](https://arxiv.org/abs/2304.11062) [code](https://github.com/booydar/t5-experiments) Scaling Transformer to 1M tokens and beyond with RMT
 
 RMT is a memory-augmented segment-level recurrent Transformer. It achieves state-of-the art results on Hyperpartisan dataset and beats Transformer-XL on algorithmic tasks and LM with limited input and memory size.
